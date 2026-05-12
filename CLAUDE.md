@@ -36,12 +36,8 @@ Because tests use the migrations, schema changes must have a generated migration
 
 `.sandcastle/` runs Claude Code autonomously in Docker (`@ai-hero/sandcastle`): `main.ts <prd> <plan>` loops through a PRD's multi-phase plan using `prompt.md`. Requires `.sandcastle/.env` (see `.env.example`).
 
-When you have a function with more than one parameter with the same type, use an object parameter instead of positional parameters:
+## Coding standards
 
-```ts
-// BAD
-const addUserToPost = (userId: string, postId: string) => {};
+All coding standards for this project live in the `coding-standards` skill at `.claude/skills/coding-standards/`.
 
-// GOOD
-const addUserToPost = (opts: { userId: string; postId: string }) => {};
-```
+**Load that skill** before writing code, reviewing changes, or answering questions about conventions.
