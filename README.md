@@ -1,16 +1,3 @@
-<div align="center">
-<a href="https://www.aihero.dev/cohorts/ai-coding-for-real-engineers-with-claude-code-2026-04">
-  <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="https://res.cloudinary.com/total-typescript/image/upload/v1778752130/github-project-header-june-dark_2x.png" />
-    <source media="(prefers-color-scheme: light)" srcset="https://res.cloudinary.com/total-typescript/image/upload/v1778752130/github-project-header-june-light_2x.png" />
-    <img src="https://res.cloudinary.com/total-typescript/image/upload/v1778752130/github-project-header-june-light_2x.png" width="421" height="102" />
-    </picture>
-</a>
-</div>
-<br/>
-
-> The exercise repo for [AI Coding for Real Engineers with Claude Code](https://www.aihero.dev/cohorts/ai-coding-for-real-engineers-with-claude-code-2026-04) — a 2-week learning cohort starting March 30, 2026.
-
 This is a full-stack course platform (think a mini Udemy) built with React Router, TypeScript, SQLite, and Drizzle ORM. Throughout the cohort, you'll use Claude Code to explore, extend, and refactor this codebase — learning real engineering workflows for AI-assisted development along the way.
 
 ## Prerequisites
@@ -87,7 +74,3 @@ pnpm cherry-pick 03.04.01
 - **Testing:** [Vitest](https://vitest.dev/)
 - **Build:** [Vite](https://vite.dev/) 7
 - **Real-time:** [Ably](https://ably.com/) for live presence
-
-## License
-
-This repository is for enrolled students of the [AI Coding for Real Engineers](https://www.aihero.dev/cohorts/ai-coding-for-real-engineers-with-claude-code-2026-04) cohort. All rights reserved.
