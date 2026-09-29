@@ -9,6 +9,11 @@ import {
 } from "~/services/courseService";
 import { isUserEnrolled } from "~/services/enrollmentService";
 import {
+  getCourseRatingSummary,
+  getUserRatingForCourse,
+  rateCourse,
+} from "~/services/ratingService";
+import {
   calculateProgress,
   getLessonProgressForCourse,
   getNextIncompleteLesson,
@@ -36,12 +41,19 @@ import {
   Users,
 } from "lucide-react";
 import { CourseImage } from "~/components/course-image";
+import {
+  StarRatingDisplay,
+  StarRatingInput,
+  Stars,
+} from "~/components/star-rating";
 import { UserAvatar } from "~/components/user-avatar";
 import { data, isRouteErrorResponse } from "react-router";
 import { formatDuration, formatPrice } from "~/lib/utils";
 import { renderMarkdown } from "~/lib/markdown.server";
 import { resolveCountry } from "~/lib/country.server";
 import { calculatePppPrice, getCountryTierInfo } from "~/lib/ppp";
+import { parseFormData } from "~/lib/validation";
+import { z } from "zod";
 
 export function meta({ data: loaderData }: Route.MetaArgs) {
   const title = loaderData?.course?.title ?? "Course";
@@ -71,6 +83,7 @@ export async function loader({ params, request }: Route.LoaderArgs) {
   let progress = 0;
   let lessonProgressMap: Record<number, string> = {};
   let nextLessonId: number | null = null;
+  let userRating: number | null = null;
 
   if (currentUserId) {
     enrolled = isUserEnrolled(currentUserId, course.id);
@@ -88,6 +101,8 @@ export async function loader({ params, request }: Route.LoaderArgs) {
 
       const nextLesson = getNextIncompleteLesson(currentUserId, course.id);
       nextLessonId = nextLesson?.id ?? null;
+
+      userRating = getUserRatingForCourse(currentUserId, course.id)?.rating ?? null;
     }
   }
 
@@ -113,10 +128,49 @@ export async function loader({ params, request }: Route.LoaderArgs) {
     currentUserId,
     pppPrice,
     tierInfo,
+    ratingSummary: getCourseRatingSummary(course.id),
+    userRating,
   };
 }
 
-// No action — enrollment is handled via the purchase confirmation page
+// Enrollment is handled via the purchase confirmation page; the only action here is rating.
+const courseActionSchema = z.discriminatedUnion("intent", [
+  z.object({
+    intent: z.literal("rate"),
+    rating: z.coerce.number().int().min(1).max(5),
+  }),
+]);
+
+export async function action({ params, request }: Route.ActionArgs) {
+  const course = getCourseBySlug(params.slug);
+  if (!course) {
+    throw data("Course not found", { status: 404 });
+  }
+
+  const currentUserId = await getCurrentUserId(request);
+  if (!currentUserId) {
+    throw data("You must be logged in", { status: 401 });
+  }
+
+  const parsed = parseFormData(await request.formData(), courseActionSchema);
+  if (!parsed.success) {
+    return data(
+      { error: parsed.errors.rating ?? "Invalid request" },
+      { status: 400 }
+    );
+  }
+
+  try {
+    rateCourse(currentUserId, course.id, parsed.data.rating);
+  } catch (error) {
+    return data(
+      { error: error instanceof Error ? error.message : "Could not save rating" },
+      { status: 400 }
+    );
+  }
+
+  return { success: true };
+}
 
 export function HydrateFallback() {
   return (
@@ -181,6 +235,8 @@ export default function CourseDetail({ loaderData }: Route.ComponentProps) {
     currentUserId,
     pppPrice,
     tierInfo,
+    ratingSummary,
+    userRating,
   } = loaderData;
   const isInstructor = currentUserId === course.instructorId;
   const [searchParams, setSearchParams] = useSearchParams();
@@ -301,7 +357,11 @@ export default function CourseDetail({ loaderData }: Route.ComponentProps) {
         <p className="mb-4 text-lg text-muted-foreground">
           {course.description}
         </p>
-        <div className="flex items-center gap-4 text-sm text-muted-foreground">
+        <div className="flex flex-wrap items-center gap-4 text-sm text-muted-foreground">
+          <StarRatingDisplay
+            average={ratingSummary.average}
+            count={ratingSummary.count}
+          />
           <span className="flex items-center gap-1.5">
             <UserAvatar
               name={course.instructorName}
@@ -413,6 +473,21 @@ export default function CourseDetail({ loaderData }: Route.ComponentProps) {
                       Buy More Seats
                     </Button>
                   </Link>
+                  <div className="border-t pt-4">
+                    {userRating === null ? (
+                      <>
+                        <p className="mb-2 text-sm font-medium">
+                          Rate this course
+                        </p>
+                        <StarRatingInput />
+                      </>
+                    ) : (
+                      <div className="flex items-center justify-between text-sm">
+                        <span className="font-medium">Your rating</span>
+                        <Stars value={userRating} />
+                      </div>
+                    )}
+                  </div>
                 </>
               ) : (
                 enrollButton

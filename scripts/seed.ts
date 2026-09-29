@@ -45,6 +45,8 @@ async function seed() {
 
   // Drop and recreate tables for a clean seed
   sqlite.exec(`
+    DROP TABLE IF EXISTS lesson_comments;
+    DROP TABLE IF EXISTS course_ratings;
     DROP TABLE IF EXISTS video_watch_events;
     DROP TABLE IF EXISTS quiz_answers;
     DROP TABLE IF EXISTS quiz_attempts;
@@ -1726,6 +1728,52 @@ You've completed the Building REST APIs course. You now have the skills to build
   console.log(
     `Created 1 team with Bossy McBossface as admin, 1 team purchase, and ${seededCoupons.length} coupons (2 redeemed, 3 available).`
   );
+
+  // ─── Lesson Comments ───
+  // A short discussion on the first two lessons of course 1, including an
+  // instructor reply and one comment soft-deleted by its author.
+
+  db.insert(schema.lessonComments)
+    .values([
+      {
+        lessonId: course1LessonIds[0],
+        userId: students[0].id,
+        content:
+          "Great intro! Is it worth enabling strict mode from day one on an existing JS project?",
+        createdAt: daysAgo(48),
+      },
+      {
+        lessonId: course1LessonIds[0],
+        userId: instructor1.id,
+        content:
+          "Good question, Emma. For existing projects I'd turn it on file by file — we cover that in module 3.",
+        createdAt: daysAgo(47),
+      },
+      {
+        lessonId: course1LessonIds[0],
+        userId: students[1].id,
+        content: "The setup steps worked perfectly on Windows too.",
+        createdAt: daysAgo(44),
+      },
+      {
+        lessonId: course1LessonIds[1],
+        userId: students[2].id,
+        content: "Oops, wrong lesson.",
+        createdAt: daysAgo(33),
+        deletedAt: daysAgo(33),
+        deletedByUserId: students[2].id,
+      },
+      {
+        lessonId: course1LessonIds[1],
+        userId: students[4].id,
+        content:
+          "Could you add an example of when `unknown` is better than `any`?\nI keep mixing them up.",
+        createdAt: daysAgo(12),
+      },
+    ])
+    .run();
+
+  console.log("Created 5 lesson comments (1 soft-deleted).");
 
   console.log("\n✓ Seed complete!");
   console.log("  Users: 9 (1 admin, 2 instructors, 6 students)");

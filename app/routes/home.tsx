@@ -4,6 +4,8 @@ import type { Route } from "./+types/home";
 import { Button } from "~/components/ui/button";
 import { Card, CardContent, CardFooter, CardHeader } from "~/components/ui/card";
 import { buildCourseQuery, getLessonCountForCourse } from "~/services/courseService";
+import { getRatingSummariesForCourses } from "~/services/ratingService";
+import { StarRatingDisplay } from "~/components/star-rating";
 import { getAllCategories } from "~/services/categoryService";
 import { CourseStatus } from "~/db/schema";
 import { BookOpen, GraduationCap, Users, ArrowRight, User, Moon, Sun } from "lucide-react";
@@ -22,9 +24,15 @@ export function meta({}: Route.MetaArgs) {
 
 export async function loader({ request }: Route.LoaderArgs) {
   const courses = buildCourseQuery(null, null, CourseStatus.Published, "newest", 50, 0);
-  const featured = courses.slice(0, 3).map((course) => ({
+  const topCourses = courses.slice(0, 3);
+  const ratingSummaries = getRatingSummariesForCourses(
+    topCourses.map((course) => course.id)
+  );
+  const featured = topCourses.map((course) => ({
     ...course,
     lessonCount: getLessonCountForCourse(course.id),
+    ratingAverage: ratingSummaries.get(course.id)?.average ?? null,
+    ratingCount: ratingSummaries.get(course.id)?.count ?? 0,
   }));
   const categories = getAllCategories();
   const users = getAllUsers();
@@ -182,10 +190,15 @@ export default function Home({ loaderData }: Route.ComponentProps) {
                       {course.title}
                     </h3>
                   </CardHeader>
-                  <CardContent>
+                  <CardContent className="space-y-2">
                     <p className="line-clamp-2 text-sm text-muted-foreground">
                       {course.description}
                     </p>
+                    <StarRatingDisplay
+                      average={course.ratingAverage}
+                      count={course.ratingCount}
+                      size="sm"
+                    />
                   </CardContent>
                   <CardFooter className="flex items-center justify-between text-xs text-muted-foreground">
                     <span className="flex items-center gap-1">
