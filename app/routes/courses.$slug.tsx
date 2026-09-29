@@ -18,6 +18,7 @@ import {
   getLessonProgressForCourse,
   getNextIncompleteLesson,
 } from "~/services/progressService";
+import { getBookmarkedLessonIds } from "~/services/bookmarkService";
 import { getCurrentUserId } from "~/lib/session";
 import { LessonProgressStatus } from "~/db/schema";
 import { Card, CardContent, CardHeader } from "~/components/ui/card";
@@ -33,6 +34,7 @@ import {
 import {
   AlertTriangle,
   BookOpen,
+  Bookmark,
   CheckCircle2,
   Circle,
   Clock,
@@ -84,6 +86,7 @@ export async function loader({ params, request }: Route.LoaderArgs) {
   let lessonProgressMap: Record<number, string> = {};
   let nextLessonId: number | null = null;
   let userRating: number | null = null;
+  let bookmarkedLessonIds: number[] = [];
 
   if (currentUserId) {
     enrolled = isUserEnrolled(currentUserId, course.id);
@@ -102,7 +105,13 @@ export async function loader({ params, request }: Route.LoaderArgs) {
       const nextLesson = getNextIncompleteLesson(currentUserId, course.id);
       nextLessonId = nextLesson?.id ?? null;
 
-      userRating = getUserRatingForCourse(currentUserId, course.id)?.rating ?? null;
+      userRating =
+        getUserRatingForCourse(currentUserId, course.id)?.rating ?? null;
+
+      bookmarkedLessonIds = getBookmarkedLessonIds({
+        userId: currentUserId,
+        courseId: course.id,
+      });
     }
   }
 
@@ -124,6 +133,7 @@ export async function loader({ params, request }: Route.LoaderArgs) {
     enrolled,
     progress,
     lessonProgressMap,
+    bookmarkedLessonIds,
     nextLessonId,
     currentUserId,
     pppPrice,
@@ -164,7 +174,9 @@ export async function action({ params, request }: Route.ActionArgs) {
     rateCourse(currentUserId, course.id, parsed.data.rating);
   } catch (error) {
     return data(
-      { error: error instanceof Error ? error.message : "Could not save rating" },
+      {
+        error: error instanceof Error ? error.message : "Could not save rating",
+      },
       { status: 400 }
     );
   }
@@ -231,6 +243,7 @@ export default function CourseDetail({ loaderData }: Route.ComponentProps) {
     enrolled,
     progress,
     lessonProgressMap,
+    bookmarkedLessonIds,
     nextLessonId,
     currentUserId,
     pppPrice,
@@ -415,6 +428,7 @@ export default function CourseDetail({ loaderData }: Route.ComponentProps) {
               enrolled={enrolled}
               isInstructor={isInstructor}
               lessonProgressMap={lessonProgressMap}
+              bookmarkedLessonIds={new Set(bookmarkedLessonIds)}
             />
           </div>
         </div>
@@ -530,6 +544,7 @@ function CourseContent({
   enrolled,
   isInstructor,
   lessonProgressMap,
+  bookmarkedLessonIds,
 }: {
   course: {
     id: number;
@@ -547,6 +562,7 @@ function CourseContent({
   enrolled: boolean;
   isInstructor: boolean;
   lessonProgressMap: Record<number, string>;
+  bookmarkedLessonIds: Set<number>;
 }) {
   return (
     <div>
@@ -560,13 +576,16 @@ function CourseContent({
           {course.modules.map((mod) => (
             <Card key={mod.id}>
               <CardHeader>
-                <h3 className="font-semibold">
+                <h3 className="flex items-center gap-2 font-semibold">
                   <Link
                     to={`/courses/${course.slug}/${mod.id}`}
                     className="hover:underline"
                   >
                     {mod.title}
                   </Link>
+                  {mod.lessons.some((l) => bookmarkedLessonIds.has(l.id)) && (
+                    <Bookmark className="size-3.5 shrink-0 fill-amber-500 text-amber-500" />
+                  )}
                 </h3>
                 <p className="text-sm text-muted-foreground">
                   {mod.lessons.length} lessons
@@ -631,6 +650,9 @@ function CourseContent({
                                   false
                                 )}
                               </span>
+                            )}
+                            {bookmarkedLessonIds.has(lesson.id) && (
+                              <Bookmark className="size-4 shrink-0 fill-amber-500 text-amber-500" />
                             )}
                           </Link>
                         ) : (

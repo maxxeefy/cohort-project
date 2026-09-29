@@ -6,21 +6,6 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 "Cadence" — a full-stack course platform (mini Udemy) built with React Router v7 (SSR, framework mode), TypeScript, SQLite (better-sqlite3) + Drizzle ORM, Tailwind CSS 4 + shadcn/ui, Vitest. Used as the playground codebase for an AI-assisted development cohort. Package manager is npm (`package-lock.json`); don't use pnpm/yarn.
 
-## Commands
-
-```bash
-npm install
-npm run db:migrate          # apply drizzle/ migrations to ./data.db
-npm run db:seed             # seed data (scripts/seed.ts)
-npm run dev                 # dev server at http://localhost:5173
-npm run build
-npm run typecheck           # react-router typegen && tsc — run after adding/changing routes
-npm test                    # vitest run (all tests)
-npm test -- app/services/courseService.test.ts   # single file
-npm test -- -t "creates a course"                 # single test by name
-npm run db:generate         # generate a new migration after editing app/db/schema.ts
-```
-
 Lesson navigation (cohort tooling): `npm run reset <commit>` / `npm run cherry-pick <commit>` (via `ai-hero-cli`).
 
 A project skill in `.claude/skills/` handles `better-sqlite3` native module version mismatches (`npm rebuild better-sqlite3`).
@@ -50,3 +35,13 @@ Because tests use the migrations, schema changes must have a generated migration
 ## Sandcastle
 
 `.sandcastle/` runs Claude Code autonomously in Docker (`@ai-hero/sandcastle`): `main.ts <prd> <plan>` loops through a PRD's multi-phase plan using `prompt.md`. Requires `.sandcastle/.env` (see `.env.example`).
+
+When you have a function with more than one parameter with the same type, use an object parameter instead of positional parameters:
+
+```ts
+// BAD
+const addUserToPost = (userId: string, postId: string) => {};
+
+// GOOD
+const addUserToPost = (opts: { userId: string; postId: string }) => {};
+```
