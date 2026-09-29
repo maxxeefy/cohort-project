@@ -10,7 +10,6 @@
 *.db
 *.db-journal
 *.db-wal
-.pnpm-store
 *.db-shm
 .claude/settings.local.json
 

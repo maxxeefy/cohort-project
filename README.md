@@ -3,7 +3,7 @@ This is a full-stack course platform (think a mini Udemy) built with React Route
 ## Prerequisites
 
 - [Node.js](https://nodejs.org/) v22+
-- [pnpm](https://pnpm.io/) v9+ (enabled via `corepack enable`)
+- npm (bundled with Node.js)
 - [Claude Code](https://docs.anthropic.com/en/docs/claude-code) CLI installed
 - A Claude Pro or Max subscription
 
@@ -11,31 +11,31 @@ This is a full-stack course platform (think a mini Udemy) built with React Route
 
 ```bash
 # Install dependencies
-pnpm install
+npm install
 
 # Run database migrations and seed data
-pnpm db:migrate
-pnpm db:seed
+npm run db:migrate
+npm run db:seed
 
 # Start the dev server
-pnpm dev
+npm run dev
 ```
 
 The app will be running at `http://localhost:5173`.
 
 ## Scripts
 
-| Command                     | Description                            |
-| --------------------------- | -------------------------------------- |
-| `pnpm dev`                  | Start the development server           |
-| `pnpm build`                | Build for production                   |
-| `pnpm test`                 | Run tests with Vitest                  |
-| `pnpm test:watch`           | Run tests in watch mode                |
-| `pnpm typecheck`            | Type-check the project                 |
-| `pnpm db:migrate`           | Run database migrations                |
-| `pnpm db:seed`              | Seed the database                      |
-| `pnpm reset <commit>`       | Reset your repo to a lesson checkpoint |
-| `pnpm cherry-pick <commit>` | Cherry-pick a lesson's solution        |
+| Command                        | Description                            |
+| ------------------------------ | -------------------------------------- |
+| `npm run dev`                  | Start the development server           |
+| `npm run build`                | Build for production                   |
+| `npm test`                     | Run tests with Vitest                  |
+| `npm run test:watch`           | Run tests in watch mode                |
+| `npm run typecheck`            | Type-check the project                 |
+| `npm run db:migrate`           | Run database migrations                |
+| `npm run db:seed`              | Seed the database                      |
+| `npm run reset <commit>`       | Reset your repo to a lesson checkpoint |
+| `npm run cherry-pick <commit>` | Cherry-pick a lesson's solution        |
 
 ## Course Structure
 
@@ -56,13 +56,13 @@ Each lesson that involves code has a starting commit and solution commits. To ju
 
 ```bash
 # Reset to a lesson's starting point
-pnpm reset 03.04.01
+npm run reset 03.04.01
 
 # Example: reset to the start of "Build a Feature"
-pnpm reset main
+npm run reset main
 
 # Cherry-pick a solution if you want to skip ahead
-pnpm cherry-pick 03.04.01
+npm run cherry-pick 03.04.01
 ```
 
 ## Tech Stack
