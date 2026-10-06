@@ -14,21 +14,15 @@ A project skill in `.claude/skills/` handles `better-sqlite3` native module vers
 
 - **Routes** are registered explicitly in `app/routes.ts` (not file-based discovery) — adding a route file requires adding it there. Most pages are nested under the `routes/layout.app.tsx` layout (sidebar, user switcher, dev UI); `login`, `signup`, and `api/*` routes are outside it. Route type imports come from generated `./+types/<route-name>` files.
 - **Route modules** do data access in `loader`/`action` by calling service functions directly (no separate API layer). Multi-action forms use a hidden `intent` field validated with a Zod `discriminatedUnion("intent", ...)`; use `parseFormData` / param helpers from `app/lib/validation.ts`. Errors are thrown as `data(message, { status })`.
-- **Services** (`app/services/*Service.ts`) contain all DB logic, are synchronous (better-sqlite3), and import the singleton `db` from `~/db`. Convention: service functions take **positional parameters**, not option objects.
-- **Schema**: `app/db/schema.ts` defines all tables plus TS enums (`UserRole`, `CourseStatus`, `LessonProgressStatus`, `QuestionType`, `TeamMemberRole`). Domain: courses → modules → lessons (+ quizzes), enrollments, lesson progress, purchases, teams, coupons, video watch events.
+- **Services** (`app/services/*Service.ts`) contain all DB logic, are synchronous (better-sqlite3), and import the singleton `db` from `~/db`. Service functions take positional parameters, except when two or more share the same type — then use a single object parameter (see `coding-standards`).
+- **Schema**: `app/db/schema.ts` defines all tables plus TS enums (`UserRole`, `CourseStatus`, `LessonProgressStatus`, `QuestionType`, `TeamMemberRole`). Domain: courses → modules → lessons (+ quizzes), enrollments, lesson progress, purchases, teams, coupons, video watch events, course ratings, lesson comments (soft-deleted), lesson bookmarks.
 - **Auth** is dev-style: a cookie session (`app/lib/session.ts`) stores `userId`; users are switched via `api/switch-user`. Authorization is done inline in each loader/action by checking `user.role` (Instructor/Admin) and course ownership (`course.instructorId`).
 - **Pricing/PPP**: `app/lib/ppp.ts` maps countries to purchasing-power tiers; `app/lib/country.server.ts` resolves country from a dev session override → `CF-IPCountry` header → ip-api.com. `*.server.ts` files are server-only.
 - Path alias `~/*` → `app/*`.
 
 ## Testing
 
-Tests live next to services (`*.test.ts`). Each test file mocks `~/db` with a getter pointing to a fresh in-memory DB built by `createTestDb()` from `app/test/setup.ts` (runs the real Drizzle migrations), and `seedBaseData()` inserts a student, instructor, category, and published course:
-
-```ts
-let testDb: ReturnType<typeof createTestDb>;
-vi.mock("~/db", () => ({ get db() { return testDb; } }));
-beforeEach(() => { testDb = createTestDb(); base = seedBaseData(testDb); });
-```
+Tests live next to services (`*.test.ts`); the `~/db` mocking pattern is in `coding-standards` (`services-and-testing.md`). `createTestDb()` from `app/test/setup.ts` builds a fresh in-memory DB by running the real Drizzle migrations, and `seedBaseData()` inserts a student, instructor, category, and published course.
 
 Because tests use the migrations, schema changes must have a generated migration (`npm run db:generate`) before tests will see them.
 

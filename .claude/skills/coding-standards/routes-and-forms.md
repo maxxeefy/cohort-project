@@ -2,17 +2,17 @@
 
 ## React Router v7
 
-File-based routing. Routes live in `app/routes/`. Each file may export `loader`, `action`, `default` (component), `meta`, and `ErrorBoundary`.
+Routes live in `app/routes/` but are registered explicitly in `app/routes.ts` (not file-based discovery) — a new route file does nothing until it's added there. Each file may export `loader`, `action`, `default` (component), `meta`, and `ErrorBoundary`.
 
 Don't put business logic directly in routes — call into services.
 
 ## Form / param validation
 
-Use these helpers from `~/lib/validation`. All return `{ success, data, errors }`.
+Use these helpers from `~/lib/validation`:
 
-- `parseFormData(formData, zodSchema)` — for route `action` form submissions
-- `parseParams(params, zodSchema)` — for route params
-- `parseJsonBody(request, zodSchema)` — for JSON request bodies
+- `parseFormData(formData, zodSchema)` — for route `action` form submissions. Returns `{ success: true, data } | { success: false, errors }`.
+- `parseJsonBody(request, zodSchema)` — for JSON request bodies. Same result shape as `parseFormData`.
+- `parseParams(params, zodSchema)` — for route params. Returns the parsed data directly and throws a 400 on failure.
 
 ## Multiple intents in one action
 
