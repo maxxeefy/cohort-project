@@ -26,8 +26,8 @@ Work through the plan step by step.
 Run the feedback loops and fix any issues. Repeat until both pass cleanly.
 
 ```
-pnpm run typecheck
-pnpm run test
+npm run typecheck
+npm run test
 ```
 
 ### 5. Commit
