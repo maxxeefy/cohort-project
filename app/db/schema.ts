@@ -36,6 +36,7 @@ export enum TeamMemberRole {
 
 export enum NotificationType {
   Enrollment = "enrollment",
+  CouponRedemption = "coupon_redemption",
 }
 
 // ─── Tables ───

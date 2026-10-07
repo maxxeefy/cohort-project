@@ -3,7 +3,7 @@ import { db } from "~/db";
 import { notifications, NotificationType } from "~/db/schema";
 
 // ─── Notification Service ───
-// In-app notifications (currently: instructor enrollment alerts).
+// In-app notifications (instructor enrollment alerts, team admin coupon redemption alerts).
 
 export function createNotification(opts: {
   recipientUserId: number;
@@ -15,7 +15,11 @@ export function createNotification(opts: {
   return db.insert(notifications).values(opts).returning().get();
 }
 
-export function getNotifications(userId: number, limit: number, offset: number) {
+export function getNotifications(
+  userId: number,
+  limit: number,
+  offset: number
+) {
   return db
     .select()
     .from(notifications)

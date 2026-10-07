@@ -51,8 +51,10 @@ export async function loader({ request }: Route.LoaderArgs) {
       })
     : [];
 
+  const userIsTeamAdmin = currentUser ? isTeamAdmin(currentUser.id) : false;
+
   const notifications =
-    currentUser?.role === UserRole.Instructor
+    currentUser && (currentUser.role === UserRole.Instructor || userIsTeamAdmin)
       ? {
           unreadCount: getUnreadCount(currentUser.id),
           items: getNotifications(currentUser.id, 5, 0).map((n) => ({
@@ -80,7 +82,7 @@ export async function loader({ request }: Route.LoaderArgs) {
     devCountry,
     countryTierInfo,
     countries: COUNTRIES,
-    isTeamAdmin: currentUserId ? isTeamAdmin(currentUserId) : false,
+    isTeamAdmin: userIsTeamAdmin,
     notifications,
   };
 }
