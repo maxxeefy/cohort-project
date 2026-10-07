@@ -43,6 +43,13 @@
       "when": 1790712775063,
       "tag": "0005_brown_vampiro",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "6",
+      "when": 1791387169280,
+      "tag": "0006_perfect_doctor_faustus",
+      "breakpoints": true
     }
   ]
 }

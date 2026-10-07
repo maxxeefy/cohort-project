@@ -4,6 +4,10 @@ import { cn } from "~/lib/utils";
 import { UserRole } from "~/db/schema";
 import { UserAvatar } from "~/components/user-avatar";
 import {
+  NotificationBell,
+  type NotificationItem,
+} from "~/components/notification-bell";
+import {
   BarChart3,
   BookOpen,
   LayoutDashboard,
@@ -39,6 +43,7 @@ interface SidebarProps {
   currentUser: CurrentUser | null;
   recentCourses?: RecentCourse[];
   isTeamAdmin?: boolean;
+  notifications?: { unreadCount: number; items: NotificationItem[] } | null;
 }
 
 interface NavItem {
@@ -114,6 +119,7 @@ export function Sidebar({
   currentUser,
   recentCourses = [],
   isTeamAdmin = false,
+  notifications = null,
 }: SidebarProps) {
   const currentUserRole = currentUser?.role ?? null;
   const { pathname } = useLocation();
@@ -134,10 +140,16 @@ export function Sidebar({
 
   return (
     <aside className="flex h-screen w-56 shrink-0 flex-col border-r border-sidebar-border bg-sidebar text-sidebar-foreground">
-      <div className="flex h-14 items-center border-b border-sidebar-border px-4">
+      <div className="flex h-14 items-center justify-between border-b border-sidebar-border px-4">
         <NavLink to="/" className="text-lg font-bold tracking-tight">
           Cadence
         </NavLink>
+        {notifications && (
+          <NotificationBell
+            unreadCount={notifications.unreadCount}
+            notifications={notifications.items}
+          />
+        )}
       </div>
 
       <nav className="flex-1 space-y-1 p-3">
