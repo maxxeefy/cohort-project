@@ -1,9 +1,10 @@
-import { NavLink, Form } from "react-router";
+import { NavLink, Form, useLocation } from "react-router";
 import { useState, useEffect } from "react";
 import { cn } from "~/lib/utils";
 import { UserRole } from "~/db/schema";
 import { UserAvatar } from "~/components/user-avatar";
 import {
+  BarChart3,
   BookOpen,
   LayoutDashboard,
   GraduationCap,
@@ -45,6 +46,8 @@ interface NavItem {
   to: string;
   icon: React.ReactNode;
   roles: UserRole[] | "all";
+  /** Nested paths that belong to another nav item, so this one shouldn't highlight there. */
+  excludePaths?: string[];
 }
 
 const navItems: NavItem[] = [
@@ -65,6 +68,13 @@ const navItems: NavItem[] = [
     to: "/instructor",
     icon: <GraduationCap className="size-4" />,
     roles: [UserRole.Instructor],
+    excludePaths: ["/instructor/analytics"],
+  },
+  {
+    label: "Analytics",
+    to: "/instructor/analytics",
+    icon: <BarChart3 className="size-4" />,
+    roles: [UserRole.Instructor, UserRole.Admin],
   },
   {
     label: "Manage Users",
@@ -86,6 +96,14 @@ const navItems: NavItem[] = [
   },
 ];
 
+function isExcluded(item: NavItem, pathname: string): boolean {
+  return (
+    item.excludePaths?.some(
+      (path) => pathname === path || pathname.startsWith(`${path}/`)
+    ) ?? false
+  );
+}
+
 function isVisible(item: NavItem, role: UserRole | null): boolean {
   if (item.roles === "all") return true;
   if (!role) return false;
@@ -98,6 +116,7 @@ export function Sidebar({
   isTeamAdmin = false,
 }: SidebarProps) {
   const currentUserRole = currentUser?.role ?? null;
+  const { pathname } = useLocation();
   const [isDark, setIsDark] = useState(false);
 
   useEffect(() => {
@@ -128,10 +147,11 @@ export function Sidebar({
             <NavLink
               key={item.to}
               to={item.to}
+              aria-current={isExcluded(item, pathname) ? false : "page"}
               className={({ isActive }) =>
                 cn(
                   "flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors",
-                  isActive
+                  isActive && !isExcluded(item, pathname)
                     ? "bg-sidebar-accent text-sidebar-accent-foreground"
                     : "text-sidebar-foreground/70 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
                 )
