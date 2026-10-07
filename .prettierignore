@@ -1,0 +1,5 @@
+package-lock.json
+build/
+.react-router/
+drizzle/
+*.db
