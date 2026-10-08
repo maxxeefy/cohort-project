@@ -79,7 +79,7 @@ const navItems: NavItem[] = [
     label: "Analytics",
     to: "/instructor/analytics",
     icon: <BarChart3 className="size-4" />,
-    roles: [UserRole.Instructor, UserRole.Admin],
+    roles: [UserRole.Instructor],
   },
   {
     label: "Admin Analytics",
