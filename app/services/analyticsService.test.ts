@@ -14,7 +14,10 @@ vi.mock("~/db", () => ({
 import {
   getAverageRatingForCourses,
   getCourseSummaries,
+  getInstructorsWithCourses,
   getLessonDropOff,
+  getPlatformRevenueTimeSeries,
+  getPlatformSummary,
   getQuizStats,
   getRangeStartDate,
   getRatingDistribution,
@@ -719,6 +722,185 @@ describe("analyticsService", () => {
       expect(
         result.points.find((p) => p.date === "2026-10-05")?.revenueCents
       ).toBe(1000);
+    });
+  });
+
+  // ─── Platform Summary ───
+
+  describe("getPlatformSummary", () => {
+    it("returns zeros and null when there is no data", () => {
+      const result = getPlatformSummary(null);
+      expect(result).toEqual({
+        totalRevenueCents: 0,
+        totalEnrollments: 0,
+        topCourse: null,
+      });
+    });
+
+    it("aggregates revenue across all courses", () => {
+      const secondCourse = insertCourse("second-course", base.instructor.id);
+      insertPurchase(base.course.id, 1000, "2026-10-01T00:00:00.000Z");
+      insertPurchase(secondCourse.id, 3000, "2026-10-02T00:00:00.000Z");
+
+      const result = getPlatformSummary(null);
+      expect(result.totalRevenueCents).toBe(4000);
+    });
+
+    it("identifies the top earning course", () => {
+      const secondCourse = insertCourse("second-course", base.instructor.id);
+      insertPurchase(base.course.id, 1000, "2026-10-01T00:00:00.000Z");
+      insertPurchase(secondCourse.id, 3000, "2026-10-02T00:00:00.000Z");
+
+      const result = getPlatformSummary(null);
+      expect(result.topCourse).toEqual({
+        title: "second-course",
+        revenueCents: 3000,
+      });
+    });
+
+    it("counts enrollments across all courses", () => {
+      const secondCourse = insertCourse("second-course", base.instructor.id);
+      insertEnrollment(base.course.id, "2026-10-01T00:00:00.000Z", null);
+      insertEnrollment(base.course.id, "2026-10-02T00:00:00.000Z", null);
+      insertEnrollment(secondCourse.id, "2026-10-03T00:00:00.000Z", null);
+
+      const result = getPlatformSummary(null);
+      expect(result.totalEnrollments).toBe(3);
+    });
+
+    it("respects the since date for revenue and enrollments", () => {
+      insertPurchase(base.course.id, 1000, "2026-09-01T00:00:00.000Z");
+      insertPurchase(base.course.id, 2000, "2026-10-05T00:00:00.000Z");
+      insertEnrollment(base.course.id, "2026-09-01T00:00:00.000Z", null);
+      insertEnrollment(base.course.id, "2026-10-05T00:00:00.000Z", null);
+
+      const since = new Date("2026-10-01T00:00:00.000Z");
+      const result = getPlatformSummary(since);
+      expect(result.totalRevenueCents).toBe(2000);
+      expect(result.totalEnrollments).toBe(1);
+    });
+
+    it("aggregates across instructors", () => {
+      const otherInstructor = testDb
+        .insert(schema.users)
+        .values({
+          name: "Other Instructor",
+          email: "other-inst@example.com",
+          role: schema.UserRole.Instructor,
+        })
+        .returning()
+        .get();
+      const otherCourse = insertCourse("other-course", otherInstructor.id);
+      insertPurchase(base.course.id, 1000, "2026-10-01T00:00:00.000Z");
+      insertPurchase(otherCourse.id, 5000, "2026-10-02T00:00:00.000Z");
+
+      const result = getPlatformSummary(null);
+      expect(result.totalRevenueCents).toBe(6000);
+      expect(result.topCourse?.title).toBe("other-course");
+    });
+  });
+
+  // ─── Platform Revenue Time Series ───
+
+  describe("getPlatformRevenueTimeSeries", () => {
+    const until = new Date("2026-10-07T12:00:00.000Z");
+
+    it("returns no points when there are no purchases", () => {
+      const result = getPlatformRevenueTimeSeries({ since: null, until });
+      expect(result.points).toEqual([]);
+    });
+
+    it("combines revenue from all courses into one series", () => {
+      const secondCourse = insertCourse("second-course", base.instructor.id);
+      insertPurchase(base.course.id, 1000, "2026-10-02T08:00:00.000Z");
+      insertPurchase(secondCourse.id, 2000, "2026-10-02T12:00:00.000Z");
+      insertPurchase(base.course.id, 500, "2026-10-05T10:00:00.000Z");
+
+      const result = getPlatformRevenueTimeSeries({
+        since: getRangeStartDate("7d", until),
+        until,
+      });
+
+      expect(result.granularity).toBe("day");
+      expect(
+        result.points.find((p) => p.date === "2026-10-02")?.revenueCents
+      ).toBe(3000);
+      expect(
+        result.points.find((p) => p.date === "2026-10-05")?.revenueCents
+      ).toBe(500);
+    });
+
+    it("respects the since date", () => {
+      insertPurchase(base.course.id, 9999, "2026-09-29T10:00:00.000Z");
+      insertPurchase(base.course.id, 1000, "2026-10-05T10:00:00.000Z");
+
+      const result = getPlatformRevenueTimeSeries({
+        since: getRangeStartDate("7d", until),
+        until,
+      });
+
+      const total = result.points.reduce((s, p) => s + p.revenueCents, 0);
+      expect(total).toBe(1000);
+    });
+  });
+
+  // ─── Instructors With Courses ───
+
+  describe("getInstructorsWithCourses", () => {
+    it("returns instructors who have published or archived courses", () => {
+      const result = getInstructorsWithCourses();
+      expect(result).toEqual([
+        { id: base.instructor.id, name: "Test Instructor" },
+      ]);
+    });
+
+    it("excludes instructors with only draft courses", () => {
+      const draftInstructor = testDb
+        .insert(schema.users)
+        .values({
+          name: "Draft Instructor",
+          email: "draft@example.com",
+          role: schema.UserRole.Instructor,
+        })
+        .returning()
+        .get();
+      testDb
+        .insert(schema.courses)
+        .values({
+          title: "Draft Course",
+          slug: "draft-course",
+          description: "A draft",
+          instructorId: draftInstructor.id,
+          categoryId: base.category.id,
+          status: schema.CourseStatus.Draft,
+        })
+        .run();
+
+      const result = getInstructorsWithCourses();
+      expect(result.map((r) => r.id)).not.toContain(draftInstructor.id);
+    });
+
+    it("does not duplicate instructors with multiple courses", () => {
+      insertCourse("another-course", base.instructor.id);
+      const result = getInstructorsWithCourses();
+      expect(result.filter((r) => r.id === base.instructor.id)).toHaveLength(1);
+    });
+
+    it("sorts by name", () => {
+      const alphaInstructor = testDb
+        .insert(schema.users)
+        .values({
+          name: "Alpha Instructor",
+          email: "alpha@example.com",
+          role: schema.UserRole.Instructor,
+        })
+        .returning()
+        .get();
+      insertCourse("alpha-course", alphaInstructor.id);
+
+      const result = getInstructorsWithCourses();
+      expect(result[0].name).toBe("Alpha Instructor");
+      expect(result[1].name).toBe("Test Instructor");
     });
   });
 });

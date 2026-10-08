@@ -2,6 +2,8 @@ import { and, asc, eq, gte, inArray, sql } from "drizzle-orm";
 import { db } from "~/db";
 import {
   courseRatings,
+  courses,
+  CourseStatus,
   enrollments,
   lessonProgress,
   LessonProgressStatus,
@@ -10,6 +12,7 @@ import {
   purchases,
   quizAttempts,
   quizzes,
+  users,
 } from "~/db/schema";
 import {
   getRatingSummariesForCourses,
@@ -440,4 +443,130 @@ export function getRatingDistribution(courseId: number) {
     distribution.push({ stars, count: counts.get(stars) ?? 0 });
   }
   return distribution;
+}
+
+// ─── Platform-wide Admin Analytics ───
+
+export type PlatformSummary = {
+  totalRevenueCents: number;
+  totalEnrollments: number;
+  topCourse: { title: string; revenueCents: number } | null;
+};
+
+export function getPlatformSummary(since: Date | null): PlatformSummary {
+  const revenueConditions = since
+    ? [gte(purchases.createdAt, since.toISOString())]
+    : [];
+
+  const revenueRows = db
+    .select({
+      courseId: purchases.courseId,
+      revenueCents: sql<number>`coalesce(sum(${purchases.pricePaid}), 0)`,
+    })
+    .from(purchases)
+    .where(revenueConditions.length > 0 ? and(...revenueConditions) : undefined)
+    .groupBy(purchases.courseId)
+    .all();
+
+  let totalRevenueCents = 0;
+  let topCourseId: number | null = null;
+  let topRevenue = 0;
+  for (const row of revenueRows) {
+    totalRevenueCents += row.revenueCents;
+    if (row.revenueCents > topRevenue) {
+      topRevenue = row.revenueCents;
+      topCourseId = row.courseId;
+    }
+  }
+
+  let topCourse: PlatformSummary["topCourse"] = null;
+  if (topCourseId !== null) {
+    const course = db
+      .select({ title: courses.title })
+      .from(courses)
+      .where(eq(courses.id, topCourseId))
+      .get();
+    if (course) {
+      topCourse = { title: course.title, revenueCents: topRevenue };
+    }
+  }
+
+  const enrollmentConditions = since
+    ? [gte(enrollments.enrolledAt, since.toISOString())]
+    : [];
+
+  const enrollmentResult = db
+    .select({ count: sql<number>`count(*)` })
+    .from(enrollments)
+    .where(
+      enrollmentConditions.length > 0 ? and(...enrollmentConditions) : undefined
+    )
+    .get();
+
+  return {
+    totalRevenueCents,
+    totalEnrollments: enrollmentResult?.count ?? 0,
+    topCourse,
+  };
+}
+
+export function getPlatformRevenueTimeSeries(period: {
+  since: Date | null;
+  until: Date;
+}): { granularity: RevenueGranularity; points: RevenuePoint[] } {
+  const conditions = period.since
+    ? [gte(purchases.createdAt, period.since.toISOString())]
+    : [];
+
+  const rows = db
+    .select({ createdAt: purchases.createdAt, pricePaid: purchases.pricePaid })
+    .from(purchases)
+    .where(conditions.length > 0 ? and(...conditions) : undefined)
+    .orderBy(asc(purchases.createdAt))
+    .all();
+
+  const start =
+    period.since ?? (rows.length > 0 ? new Date(rows[0].createdAt) : null);
+  if (!start) return { granularity: "day", points: [] };
+
+  const granularity = pickGranularity(
+    (period.until.getTime() - start.getTime()) / MS_PER_DAY
+  );
+
+  const totals = new Map<string, number>();
+  for (
+    let bucket = bucketStart(start, granularity);
+    bucket <= period.until;
+    bucket = nextBucket(bucket, granularity)
+  ) {
+    totals.set(bucket.toISOString().slice(0, 10), 0);
+  }
+  for (const row of rows) {
+    const key = bucketStart(new Date(row.createdAt), granularity)
+      .toISOString()
+      .slice(0, 10);
+    if (totals.has(key)) totals.set(key, totals.get(key)! + row.pricePaid);
+  }
+
+  return {
+    granularity,
+    points: [...totals].map(([date, revenueCents]) => ({ date, revenueCents })),
+  };
+}
+
+export function getInstructorsWithCourses() {
+  const rows = db
+    .select({
+      id: users.id,
+      name: users.name,
+    })
+    .from(users)
+    .innerJoin(courses, eq(courses.instructorId, users.id))
+    .where(
+      inArray(courses.status, [CourseStatus.Published, CourseStatus.Archived])
+    )
+    .groupBy(users.id)
+    .orderBy(asc(users.name))
+    .all();
+  return rows;
 }
