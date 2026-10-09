@@ -32,12 +32,12 @@ import {
 const RANGE_OPTIONS: { value: AnalyticsRange; label: string }[] = [
   { value: "7d", label: "7 days" },
   { value: "30d", label: "30 days" },
-  { value: "90d", label: "90 days" },
+  { value: "12m", label: "12 months" },
   { value: "all", label: "All time" },
 ];
 
 const searchSchema = z.object({
-  range: z.enum(["7d", "30d", "90d", "all"]).default("30d"),
+  range: z.enum(["7d", "30d", "12m", "all"]).default("30d"),
 });
 
 function formatRevenue(cents: number) {
@@ -75,7 +75,7 @@ export async function loader({ request }: Route.LoaderArgs) {
   const now = new Date();
   const since = getRangeStartDate(range, now);
   const summary = getPlatformSummary(since);
-  const revenueSeries = getPlatformRevenueTimeSeries({ since, until: now });
+  const revenueSeries = getPlatformRevenueTimeSeries(range, now);
 
   return { range, summary, revenueSeries };
 }

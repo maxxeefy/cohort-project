@@ -179,6 +179,12 @@ describe("analyticsService", () => {
         "2026-07-09T12:00:00.000Z"
       );
     });
+
+    it("subtracts twelve calendar months for 12m", () => {
+      expect(getRangeStartDate("12m", now)?.toISOString()).toBe(
+        "2025-10-07T12:00:00.000Z"
+      );
+    });
   });
 
   // ─── Revenue ───
@@ -803,44 +809,122 @@ describe("analyticsService", () => {
   // ─── Platform Revenue Time Series ───
 
   describe("getPlatformRevenueTimeSeries", () => {
-    const until = new Date("2026-10-07T12:00:00.000Z");
+    const now = new Date("2026-10-07T12:00:00.000Z");
 
-    it("returns no points when there are no purchases", () => {
-      const result = getPlatformRevenueTimeSeries({ since: null, until });
-      expect(result.points).toEqual([]);
+    function total(points: { revenueCents: number }[]) {
+      return points.reduce((sum, p) => sum + p.revenueCents, 0);
+    }
+
+    it("returns no points for all time when there are no purchases", () => {
+      const result = getPlatformRevenueTimeSeries("all", now);
+      expect(result).toEqual({ granularity: "month", points: [] });
     });
 
-    it("combines revenue from all courses into one series", () => {
-      const secondCourse = insertCourse("second-course", base.instructor.id);
+    it("returns zero-filled daily points for a range without purchases", () => {
+      const result = getPlatformRevenueTimeSeries("7d", now);
+      expect(result.granularity).toBe("day");
+      expect(result.points).toHaveLength(8);
+      expect(result.points.every((p) => p.revenueCents === 0)).toBe(true);
+    });
+
+    it("combines revenue from all courses and instructors into one series", () => {
+      const otherInstructor = testDb
+        .insert(schema.users)
+        .values({
+          name: "Other Instructor",
+          email: "other-instructor@example.com",
+          role: schema.UserRole.Instructor,
+        })
+        .returning()
+        .get();
+      const secondCourse = insertCourse("second-course", otherInstructor.id);
       insertPurchase(base.course.id, 1000, "2026-10-02T08:00:00.000Z");
       insertPurchase(secondCourse.id, 2000, "2026-10-02T12:00:00.000Z");
       insertPurchase(base.course.id, 500, "2026-10-05T10:00:00.000Z");
 
-      const result = getPlatformRevenueTimeSeries({
-        since: getRangeStartDate("7d", until),
-        until,
-      });
+      const result = getPlatformRevenueTimeSeries("7d", now);
 
-      expect(result.granularity).toBe("day");
-      expect(
-        result.points.find((p) => p.date === "2026-10-02")?.revenueCents
-      ).toBe(3000);
-      expect(
-        result.points.find((p) => p.date === "2026-10-05")?.revenueCents
-      ).toBe(500);
+      expect(result.points).toEqual([
+        { date: "2026-09-30", revenueCents: 0 },
+        { date: "2026-10-01", revenueCents: 0 },
+        { date: "2026-10-02", revenueCents: 3000 },
+        { date: "2026-10-03", revenueCents: 0 },
+        { date: "2026-10-04", revenueCents: 0 },
+        { date: "2026-10-05", revenueCents: 500 },
+        { date: "2026-10-06", revenueCents: 0 },
+        { date: "2026-10-07", revenueCents: 0 },
+      ]);
     });
 
-    it("respects the since date", () => {
+    it("uses daily buckets for 30d", () => {
+      insertPurchase(base.course.id, 1000, "2026-09-10T10:00:00.000Z");
+
+      const result = getPlatformRevenueTimeSeries("30d", now);
+
+      expect(result.granularity).toBe("day");
+      expect(result.points).toHaveLength(31);
+      expect(result.points[0].date).toBe("2026-09-07");
+      expect(result.points.at(-1)?.date).toBe("2026-10-07");
+      expect(
+        result.points.find((p) => p.date === "2026-09-10")?.revenueCents
+      ).toBe(1000);
+    });
+
+    it("uses monthly buckets for 12m and fills empty months with zero", () => {
+      insertPurchase(base.course.id, 1000, "2026-01-15T10:00:00.000Z");
+      insertPurchase(base.course.id, 2500, "2026-01-20T10:00:00.000Z");
+      insertPurchase(base.course.id, 700, "2026-10-01T10:00:00.000Z");
+
+      const result = getPlatformRevenueTimeSeries("12m", now);
+
+      expect(result.granularity).toBe("month");
+      expect(result.points).toHaveLength(13);
+      expect(result.points[0]).toEqual({ date: "2025-10-01", revenueCents: 0 });
+      expect(result.points.find((p) => p.date === "2026-01-01")).toEqual({
+        date: "2026-01-01",
+        revenueCents: 3500,
+      });
+      expect(result.points.at(-1)).toEqual({
+        date: "2026-10-01",
+        revenueCents: 700,
+      });
+    });
+
+    it("uses monthly buckets for all time, starting at the first purchase", () => {
+      insertPurchase(base.course.id, 1000, "2026-08-20T10:00:00.000Z");
+      insertPurchase(base.course.id, 400, "2026-10-03T10:00:00.000Z");
+
+      const result = getPlatformRevenueTimeSeries("all", now);
+
+      expect(result).toEqual({
+        granularity: "month",
+        points: [
+          { date: "2026-08-01", revenueCents: 1000 },
+          { date: "2026-09-01", revenueCents: 0 },
+          { date: "2026-10-01", revenueCents: 400 },
+        ],
+      });
+    });
+
+    it("excludes purchases before the range", () => {
       insertPurchase(base.course.id, 9999, "2026-09-29T10:00:00.000Z");
       insertPurchase(base.course.id, 1000, "2026-10-05T10:00:00.000Z");
 
-      const result = getPlatformRevenueTimeSeries({
-        since: getRangeStartDate("7d", until),
-        until,
-      });
+      expect(total(getPlatformRevenueTimeSeries("7d", now).points)).toBe(1000);
+    });
 
-      const total = result.points.reduce((s, p) => s + p.revenueCents, 0);
-      expect(total).toBe(1000);
+    it("sums to the same total as the summary revenue for every range", () => {
+      insertPurchase(base.course.id, 1000, "2024-03-01T10:00:00.000Z");
+      insertPurchase(base.course.id, 2000, "2026-02-01T10:00:00.000Z");
+      insertPurchase(base.course.id, 3000, "2026-09-20T10:00:00.000Z");
+      insertPurchase(base.course.id, 4000, "2026-10-06T10:00:00.000Z");
+
+      for (const range of ["7d", "30d", "12m", "all"] as const) {
+        const summary = getPlatformSummary(getRangeStartDate(range, now));
+        expect(total(getPlatformRevenueTimeSeries(range, now).points)).toBe(
+          summary.totalRevenueCents
+        );
+      }
     });
   });
 

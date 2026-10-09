@@ -24,9 +24,9 @@ import {
 // Aggregations for the instructor analytics dashboard.
 // Uses positional parameters (project convention).
 
-export type AnalyticsRange = "7d" | "30d" | "90d" | "all";
+export type AnalyticsRange = "7d" | "30d" | "90d" | "12m" | "all";
 
-const RANGE_DAYS: Record<Exclude<AnalyticsRange, "all">, number> = {
+const RANGE_DAYS: Record<Exclude<AnalyticsRange, "12m" | "all">, number> = {
   "7d": 7,
   "30d": 30,
   "90d": 90,
@@ -36,6 +36,11 @@ const MS_PER_DAY = 24 * 60 * 60 * 1000;
 
 export function getRangeStartDate(range: AnalyticsRange, now: Date) {
   if (range === "all") return null;
+  if (range === "12m") {
+    const start = new Date(now);
+    start.setUTCMonth(start.getUTCMonth() - 12);
+    return start;
+  }
   return new Date(now.getTime() - RANGE_DAYS[range] * MS_PER_DAY);
 }
 
@@ -107,6 +112,30 @@ function pickGranularity(spanDays: number): RevenueGranularity {
   return "month";
 }
 
+/** Sums purchases into buckets from `start` to `until`, filling empty buckets with zero. */
+function bucketRevenue(
+  rows: { createdAt: string; pricePaid: number }[],
+  period: { start: Date; until: Date },
+  granularity: RevenueGranularity
+): RevenuePoint[] {
+  const totals = new Map<string, number>();
+  for (
+    let bucket = bucketStart(period.start, granularity);
+    bucket <= period.until;
+    bucket = nextBucket(bucket, granularity)
+  ) {
+    totals.set(bucket.toISOString().slice(0, 10), 0);
+  }
+  for (const row of rows) {
+    const key = bucketStart(new Date(row.createdAt), granularity)
+      .toISOString()
+      .slice(0, 10);
+    if (totals.has(key)) totals.set(key, totals.get(key)! + row.pricePaid);
+  }
+
+  return [...totals].map(([date, revenueCents]) => ({ date, revenueCents }));
+}
+
 /**
  * Revenue per day/week/month (picked from the span) between `since` and
  * `until`, with empty buckets filled in as zero. With `since: null` the
@@ -138,24 +167,9 @@ export function getRevenueTimeSeries(
     (period.until.getTime() - start.getTime()) / MS_PER_DAY
   );
 
-  const totals = new Map<string, number>();
-  for (
-    let bucket = bucketStart(start, granularity);
-    bucket <= period.until;
-    bucket = nextBucket(bucket, granularity)
-  ) {
-    totals.set(bucket.toISOString().slice(0, 10), 0);
-  }
-  for (const row of rows) {
-    const key = bucketStart(new Date(row.createdAt), granularity)
-      .toISOString()
-      .slice(0, 10);
-    if (totals.has(key)) totals.set(key, totals.get(key)! + row.pricePaid);
-  }
-
   return {
     granularity,
-    points: [...totals].map(([date, revenueCents]) => ({ date, revenueCents })),
+    points: bucketRevenue(rows, { start, until: period.until }, granularity),
   };
 }
 
@@ -510,12 +524,21 @@ export function getPlatformSummary(since: Date | null): PlatformSummary {
   };
 }
 
-export function getPlatformRevenueTimeSeries(period: {
-  since: Date | null;
-  until: Date;
-}): { granularity: RevenueGranularity; points: RevenuePoint[] } {
-  const conditions = period.since
-    ? [gte(purchases.createdAt, period.since.toISOString())]
+/**
+ * Combined revenue across all courses for the range ending at `now`: daily
+ * buckets for 7d/30d/90d, monthly for 12m/all. Empty buckets are zero; the
+ * all-time series starts at the first purchase. Buckets are UTC.
+ */
+export function getPlatformRevenueTimeSeries(
+  range: AnalyticsRange,
+  now: Date
+): { granularity: RevenueGranularity; points: RevenuePoint[] } {
+  const since = getRangeStartDate(range, now);
+  const granularity: RevenueGranularity =
+    range === "12m" || range === "all" ? "month" : "day";
+
+  const conditions = since
+    ? [gte(purchases.createdAt, since.toISOString())]
     : [];
 
   const rows = db
@@ -525,32 +548,12 @@ export function getPlatformRevenueTimeSeries(period: {
     .orderBy(asc(purchases.createdAt))
     .all();
 
-  const start =
-    period.since ?? (rows.length > 0 ? new Date(rows[0].createdAt) : null);
-  if (!start) return { granularity: "day", points: [] };
-
-  const granularity = pickGranularity(
-    (period.until.getTime() - start.getTime()) / MS_PER_DAY
-  );
-
-  const totals = new Map<string, number>();
-  for (
-    let bucket = bucketStart(start, granularity);
-    bucket <= period.until;
-    bucket = nextBucket(bucket, granularity)
-  ) {
-    totals.set(bucket.toISOString().slice(0, 10), 0);
-  }
-  for (const row of rows) {
-    const key = bucketStart(new Date(row.createdAt), granularity)
-      .toISOString()
-      .slice(0, 10);
-    if (totals.has(key)) totals.set(key, totals.get(key)! + row.pricePaid);
-  }
+  const start = since ?? (rows.length > 0 ? new Date(rows[0].createdAt) : null);
+  if (!start) return { granularity, points: [] };
 
   return {
     granularity,
-    points: [...totals].map(([date, revenueCents]) => ({ date, revenueCents })),
+    points: bucketRevenue(rows, { start, until: now }, granularity),
   };
 }
 
