@@ -573,3 +573,106 @@ export function getInstructorsWithCourses() {
     .all();
   return rows;
 }
+
+export type PlatformCourseBreakdownRow = {
+  courseId: number;
+  title: string;
+  instructorId: number;
+  instructorName: string;
+  listPriceCents: number;
+  revenueCents: number;
+  salesCount: number;
+  enrollmentCount: number;
+  averageRating: number | null;
+  ratingCount: number;
+};
+
+/**
+ * One row per published/archived course (the same set the instructor filter
+ * is built from), optionally limited to one instructor. Revenue, sales and
+ * enrollments count from `since`; ratings are all time. Sorted by revenue,
+ * highest first, then by title.
+ */
+export function getPlatformCourseBreakdown(
+  since: Date | null,
+  instructorId: number | null
+): PlatformCourseBreakdownRow[] {
+  const courseConditions = [
+    inArray(courses.status, [CourseStatus.Published, CourseStatus.Archived]),
+  ];
+  if (instructorId !== null) {
+    courseConditions.push(eq(courses.instructorId, instructorId));
+  }
+
+  const courseRows = db
+    .select({
+      courseId: courses.id,
+      title: courses.title,
+      instructorId: users.id,
+      instructorName: users.name,
+      listPriceCents: courses.price,
+    })
+    .from(courses)
+    .innerJoin(users, eq(courses.instructorId, users.id))
+    .where(and(...courseConditions))
+    .all();
+
+  if (courseRows.length === 0) return [];
+  const courseIds = courseRows.map((row) => row.courseId);
+
+  const purchaseConditions = [inArray(purchases.courseId, courseIds)];
+  if (since) {
+    purchaseConditions.push(gte(purchases.createdAt, since.toISOString()));
+  }
+  const salesRows = db
+    .select({
+      courseId: purchases.courseId,
+      revenueCents: sql<number>`coalesce(sum(${purchases.pricePaid}), 0)`,
+      salesCount: sql<number>`count(*)`,
+    })
+    .from(purchases)
+    .where(and(...purchaseConditions))
+    .groupBy(purchases.courseId)
+    .all();
+  const salesByCourse = new Map(salesRows.map((row) => [row.courseId, row]));
+
+  const enrollmentConditions = [inArray(enrollments.courseId, courseIds)];
+  if (since) {
+    enrollmentConditions.push(gte(enrollments.enrolledAt, since.toISOString()));
+  }
+  const enrollmentRows = db
+    .select({
+      courseId: enrollments.courseId,
+      count: sql<number>`count(*)`,
+    })
+    .from(enrollments)
+    .where(and(...enrollmentConditions))
+    .groupBy(enrollments.courseId)
+    .all();
+  const enrollmentsByCourse = new Map(
+    enrollmentRows.map((row) => [row.courseId, row.count])
+  );
+
+  const ratings = getRatingSummariesForCourses(courseIds);
+
+  return courseRows
+    .map((course) => {
+      const sales = salesByCourse.get(course.courseId);
+      const rating = ratings.get(course.courseId) ?? {
+        average: null,
+        count: 0,
+      };
+      return {
+        ...course,
+        revenueCents: sales?.revenueCents ?? 0,
+        salesCount: sales?.salesCount ?? 0,
+        enrollmentCount: enrollmentsByCourse.get(course.courseId) ?? 0,
+        averageRating: rating.average,
+        ratingCount: rating.count,
+      };
+    })
+    .sort(
+      (a, b) =>
+        b.revenueCents - a.revenueCents || a.title.localeCompare(b.title)
+    );
+}

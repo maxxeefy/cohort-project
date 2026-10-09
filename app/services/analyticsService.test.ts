@@ -16,6 +16,7 @@ import {
   getCourseSummaries,
   getInstructorsWithCourses,
   getLessonDropOff,
+  getPlatformCourseBreakdown,
   getPlatformRevenueTimeSeries,
   getPlatformSummary,
   getQuizStats,
@@ -985,6 +986,158 @@ describe("analyticsService", () => {
       const result = getInstructorsWithCourses();
       expect(result[0].name).toBe("Alpha Instructor");
       expect(result[1].name).toBe("Test Instructor");
+    });
+  });
+
+  // ─── Platform Course Breakdown ───
+
+  describe("getPlatformCourseBreakdown", () => {
+    function insertInstructor(name: string) {
+      return testDb
+        .insert(schema.users)
+        .values({
+          name,
+          email: `${name.toLowerCase().replace(/ /g, "-")}@example.com`,
+          role: schema.UserRole.Instructor,
+        })
+        .returning()
+        .get();
+    }
+
+    it("returns a zeroed row for a course without activity", () => {
+      expect(getPlatformCourseBreakdown(null, null)).toEqual([
+        {
+          courseId: base.course.id,
+          title: "Test Course",
+          instructorId: base.instructor.id,
+          instructorName: "Test Instructor",
+          listPriceCents: base.course.price,
+          revenueCents: 0,
+          salesCount: 0,
+          enrollmentCount: 0,
+          averageRating: null,
+          ratingCount: 0,
+        },
+      ]);
+    });
+
+    it("aggregates revenue, sales, enrollments and ratings per course", () => {
+      const secondCourse = insertCourse("second-course", base.instructor.id);
+      insertPurchase(base.course.id, 1000, "2026-10-01T00:00:00.000Z");
+      insertPurchase(base.course.id, 1500, "2026-10-02T00:00:00.000Z");
+      insertPurchase(secondCourse.id, 4000, "2026-10-03T00:00:00.000Z");
+      insertEnrollment(base.course.id, "2026-10-01T00:00:00.000Z", null);
+      insertEnrollment(base.course.id, "2026-10-02T00:00:00.000Z", null);
+      insertEnrollment(secondCourse.id, "2026-10-03T00:00:00.000Z", null);
+      insertRating(base.course.id, 4);
+      insertRating(base.course.id, 5);
+
+      const result = getPlatformCourseBreakdown(null, null);
+      const first = result.find((r) => r.courseId === base.course.id)!;
+      const second = result.find((r) => r.courseId === secondCourse.id)!;
+
+      expect(first).toMatchObject({
+        revenueCents: 2500,
+        salesCount: 2,
+        enrollmentCount: 2,
+        averageRating: 4.5,
+        ratingCount: 2,
+      });
+      expect(second).toMatchObject({
+        revenueCents: 4000,
+        salesCount: 1,
+        enrollmentCount: 1,
+        averageRating: null,
+        ratingCount: 0,
+      });
+    });
+
+    it("sorts by revenue, highest first", () => {
+      const secondCourse = insertCourse("second-course", base.instructor.id);
+      insertPurchase(secondCourse.id, 4000, "2026-10-03T00:00:00.000Z");
+
+      expect(
+        getPlatformCourseBreakdown(null, null).map((r) => r.courseId)
+      ).toEqual([secondCourse.id, base.course.id]);
+    });
+
+    it("includes the instructor name for courses from every instructor", () => {
+      const other = insertInstructor("Other Instructor");
+      const otherCourse = insertCourse("other-course", other.id);
+
+      const result = getPlatformCourseBreakdown(null, null);
+      expect(result.find((r) => r.courseId === otherCourse.id)).toMatchObject({
+        instructorId: other.id,
+        instructorName: "Other Instructor",
+      });
+      expect(result).toHaveLength(2);
+    });
+
+    it("filters to a single instructor's courses", () => {
+      const other = insertInstructor("Other Instructor");
+      const otherCourse = insertCourse("other-course", other.id);
+      insertPurchase(base.course.id, 1000, "2026-10-01T00:00:00.000Z");
+      insertPurchase(otherCourse.id, 2000, "2026-10-01T00:00:00.000Z");
+
+      const result = getPlatformCourseBreakdown(null, other.id);
+      expect(result.map((r) => r.courseId)).toEqual([otherCourse.id]);
+      expect(result[0].revenueCents).toBe(2000);
+    });
+
+    it("returns no rows for an instructor without courses", () => {
+      const other = insertInstructor("Other Instructor");
+      expect(getPlatformCourseBreakdown(null, other.id)).toEqual([]);
+    });
+
+    it("excludes draft courses", () => {
+      testDb
+        .insert(schema.courses)
+        .values({
+          title: "Draft Course",
+          slug: "draft-course",
+          description: "A draft",
+          instructorId: base.instructor.id,
+          categoryId: base.category.id,
+          status: schema.CourseStatus.Draft,
+        })
+        .run();
+
+      expect(
+        getPlatformCourseBreakdown(null, null).map((r) => r.title)
+      ).toEqual(["Test Course"]);
+    });
+
+    it("counts revenue, sales and enrollments from the since date only", () => {
+      insertPurchase(base.course.id, 9999, "2026-09-01T00:00:00.000Z");
+      insertPurchase(base.course.id, 1000, "2026-10-05T00:00:00.000Z");
+      insertEnrollment(base.course.id, "2026-09-01T00:00:00.000Z", null);
+      insertEnrollment(base.course.id, "2026-10-05T00:00:00.000Z", null);
+      insertRating(base.course.id, 3);
+
+      const [row] = getPlatformCourseBreakdown(
+        new Date("2026-10-01T00:00:00.000Z"),
+        null
+      );
+      expect(row).toMatchObject({
+        revenueCents: 1000,
+        salesCount: 1,
+        enrollmentCount: 1,
+        averageRating: 3,
+        ratingCount: 1,
+      });
+    });
+
+    it("sums to the summary revenue when unfiltered", () => {
+      const other = insertInstructor("Other Instructor");
+      const otherCourse = insertCourse("other-course", other.id);
+      insertPurchase(base.course.id, 1000, "2026-10-01T00:00:00.000Z");
+      insertPurchase(otherCourse.id, 2500, "2026-10-02T00:00:00.000Z");
+
+      const total = getPlatformCourseBreakdown(null, null).reduce(
+        (sum, r) => sum + r.revenueCents,
+        0
+      );
+      expect(total).toBe(getPlatformSummary(null).totalRevenueCents);
     });
   });
 });

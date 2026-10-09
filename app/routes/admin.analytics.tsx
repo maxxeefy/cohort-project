@@ -2,6 +2,7 @@ import {
   Link,
   data,
   isRouteErrorResponse,
+  useNavigate,
   useSearchParams,
 } from "react-router";
 import { z } from "zod";
@@ -11,6 +12,8 @@ import { parseParams } from "~/lib/validation";
 import { cn, formatPrice } from "~/lib/utils";
 import { getUserById } from "~/services/userService";
 import {
+  getInstructorsWithCourses,
+  getPlatformCourseBreakdown,
   getPlatformRevenueTimeSeries,
   getPlatformSummary,
   getRangeStartDate,
@@ -20,6 +23,13 @@ import { UserRole } from "~/db/schema";
 import { Card, CardContent, CardHeader, CardTitle } from "~/components/ui/card";
 import { Button } from "~/components/ui/button";
 import { Skeleton } from "~/components/ui/skeleton";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "~/components/ui/select";
 import { RevenueChart } from "~/components/revenue-chart";
 import {
   AlertTriangle,
@@ -38,10 +48,18 @@ const RANGE_OPTIONS: { value: AnalyticsRange; label: string }[] = [
 
 const searchSchema = z.object({
   range: z.enum(["7d", "30d", "12m", "all"]).default("30d"),
+  instructorId: z.coerce.number().int().positive().optional(),
 });
+
+const ALL_INSTRUCTORS = "all";
+const EM_DASH = "—";
 
 function formatRevenue(cents: number) {
   return cents === 0 ? "$0.00" : formatPrice(cents);
+}
+
+function formatRating(average: number | null) {
+  return average === null ? EM_DASH : `★ ${average.toFixed(1)}`;
 }
 
 export function meta() {
@@ -67,7 +85,7 @@ export async function loader({ request }: Route.LoaderArgs) {
   }
 
   const url = new URL(request.url);
-  const { range } = parseParams(
+  const { range, instructorId } = parseParams(
     Object.fromEntries(url.searchParams),
     searchSchema
   );
@@ -76,8 +94,24 @@ export async function loader({ request }: Route.LoaderArgs) {
   const since = getRangeStartDate(range, now);
   const summary = getPlatformSummary(since);
   const revenueSeries = getPlatformRevenueTimeSeries(range, now);
+  const instructors = getInstructorsWithCourses();
+  // An unknown instructor id falls back to "All Instructors".
+  const selectedInstructorId = instructors.some((i) => i.id === instructorId)
+    ? instructorId!
+    : null;
+  const courseBreakdown = getPlatformCourseBreakdown(
+    since,
+    selectedInstructorId
+  );
 
-  return { range, summary, revenueSeries };
+  return {
+    range,
+    summary,
+    revenueSeries,
+    instructors,
+    selectedInstructorId,
+    courseBreakdown,
+  };
 }
 
 export function HydrateFallback() {
@@ -92,18 +126,34 @@ export function HydrateFallback() {
         <Skeleton className="h-32" />
       </div>
       <Skeleton className="mt-6 h-64" />
+      <Skeleton className="mt-6 h-64" />
     </div>
   );
 }
 
 export default function AdminAnalytics({ loaderData }: Route.ComponentProps) {
-  const { range, summary, revenueSeries } = loaderData;
+  const {
+    range,
+    summary,
+    revenueSeries,
+    instructors,
+    selectedInstructorId,
+    courseBreakdown,
+  } = loaderData;
   const [searchParams] = useSearchParams();
+  const navigate = useNavigate();
 
   function rangeHref(value: AnalyticsRange) {
     const next = new URLSearchParams(searchParams);
     next.set("range", value);
     return `?${next.toString()}`;
+  }
+
+  function selectInstructor(value: string) {
+    const next = new URLSearchParams(searchParams);
+    if (value === ALL_INSTRUCTORS) next.delete("instructorId");
+    else next.set("instructorId", value);
+    navigate(`?${next.toString()}`, { preventScrollReset: true });
   }
 
   const rangeLabel = RANGE_OPTIONS.find((o) => o.value === range)?.label;
@@ -230,6 +280,100 @@ export default function AdminAnalytics({ loaderData }: Route.ComponentProps) {
                 points={revenueSeries.points}
                 granularity={revenueSeries.granularity}
               />
+            </CardContent>
+          </Card>
+
+          <Card className="mt-6">
+            <CardHeader className="flex flex-row flex-wrap items-start justify-between gap-4">
+              <div>
+                <CardTitle>Courses</CardTitle>
+                <p className="mt-1.5 text-sm text-muted-foreground">
+                  Revenue, sales and enrollments for the selected period;
+                  ratings are all time.
+                </p>
+              </div>
+              <Select
+                value={
+                  selectedInstructorId === null
+                    ? ALL_INSTRUCTORS
+                    : String(selectedInstructorId)
+                }
+                onValueChange={selectInstructor}
+              >
+                <SelectTrigger className="w-56" aria-label="Instructor">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value={ALL_INSTRUCTORS}>
+                    All Instructors
+                  </SelectItem>
+                  {instructors.map((i) => (
+                    <SelectItem key={i.id} value={String(i.id)}>
+                      {i.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </CardHeader>
+            <CardContent className="overflow-x-auto">
+              {courseBreakdown.length === 0 ? (
+                <p className="py-8 text-center text-sm text-muted-foreground">
+                  No courses to show.
+                </p>
+              ) : (
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="border-b text-left text-muted-foreground">
+                      <th className="pb-2 pr-4 font-medium">Course</th>
+                      <th className="pb-2 pr-4 font-medium">Instructor</th>
+                      <th className="pb-2 pr-4 text-right font-medium">
+                        List Price
+                      </th>
+                      <th className="pb-2 pr-4 text-right font-medium">
+                        Revenue
+                      </th>
+                      <th className="pb-2 pr-4 text-right font-medium">
+                        Sales
+                      </th>
+                      <th className="pb-2 pr-4 text-right font-medium">
+                        Enrollments
+                      </th>
+                      <th className="pb-2 text-right font-medium">Rating</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {courseBreakdown.map((course) => (
+                      <tr
+                        key={course.courseId}
+                        className="border-b last:border-0"
+                      >
+                        <td className="py-3 pr-4 font-medium">
+                          {course.title}
+                        </td>
+                        <td className="py-3 pr-4">{course.instructorName}</td>
+                        <td className="py-3 pr-4 text-right tabular-nums">
+                          {formatPrice(course.listPriceCents)}
+                        </td>
+                        <td className="py-3 pr-4 text-right tabular-nums">
+                          {formatRevenue(course.revenueCents)}
+                        </td>
+                        <td className="py-3 pr-4 text-right tabular-nums">
+                          {course.salesCount}
+                        </td>
+                        <td className="py-3 pr-4 text-right tabular-nums">
+                          {course.enrollmentCount}
+                        </td>
+                        <td className="py-3 text-right tabular-nums">
+                          {formatRating(course.averageRating)}{" "}
+                          <span className="text-muted-foreground">
+                            ({course.ratingCount})
+                          </span>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
             </CardContent>
           </Card>
         </>
